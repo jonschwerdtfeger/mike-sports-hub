@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Michael SportsHub
+
+A personalized sports dashboard for Michael, tracking:
+
+- Philadelphia Phillies
+- Tampa Bay Lightning
+- New England Patriots
+- Florida Gators football
+
+The app is built with Next.js App Router, TypeScript, and Tailwind CSS. It uses typed server-side provider functions for scores, schedules, news, and transaction-related headlines. MCP/browser tooling is useful during development and verification, but it is not part of the deployed runtime.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
 
-## Learn More
+## Data Model
 
-To learn more about Next.js, take a look at the following resources:
+Michael's personalization lives in `src/config/profile.ts`. Each team has display metadata, colors, ESPN provider references, logo URL, and news query terms.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The server-side data functions live in `src/lib/sports-data.ts`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `getTeamStatus(team)`
+- `getSchedule(team)`
+- `getNews(team)`
+- `getTransactionHeadlines(team)`
 
-## Deploy on Vercel
+The dashboard degrades gracefully when public sports/news feeds are unavailable.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deploy with Vercel's Git integration. No API keys are required for v1. If paid providers are added later, store keys in Vercel environment variables and keep provider calls server-side.
