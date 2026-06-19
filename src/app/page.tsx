@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { TeamSpotlightDock } from "@/components/team-spotlight-drawer";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { michaelProfile, TeamConfig } from "@/config/profile";
 import { GameSummary, getDashboardData, NewsItem, TeamStandingSummary, TeamStatus } from "@/lib/sports-data";
@@ -26,22 +27,7 @@ export default async function Home() {
               <div className="flex justify-start lg:justify-end">
                 <ThemeToggle />
               </div>
-              <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-                {data.teams.map((team) => (
-                  <a
-                    key={team.id}
-                    href={`#${team.id}`}
-                    className="flex min-h-14 items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 font-medium text-[var(--text)] transition hover:border-[var(--border-strong)] hover:bg-[var(--hover)]"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: team.primaryColor }}
-                    />
-                    {team.shortName}
-                  </a>
-                ))}
-              </div>
+              <TeamSpotlightDock spotlights={data.teamSpotlights} />
             </div>
           </header>
 
