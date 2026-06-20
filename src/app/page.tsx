@@ -1,20 +1,18 @@
-import Image from "next/image";
 import { TeamSpotlightDock } from "@/components/team-spotlight-drawer";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { michaelProfile, TeamConfig } from "@/config/profile";
-import { GameSummary, getDashboardData, NewsItem, TeamStandingSummary, TeamStatus } from "@/lib/sports-data";
+import { formatGameTitle, formatNewsDate } from "@/lib/sports-format";
+import { GameSummary, getDashboardData, NewsItem, TeamSpotlight } from "@/lib/sports-data";
 
 export default async function Home() {
   const data = await getDashboardData();
-  const statusByTeam = new Map(data.statuses.map((status) => [status.teamId, status]));
-  const standingByTeam = new Map(data.standings.map((standing) => [standing.teamId, standing]));
   const teamById = new Map(data.teams.map((team) => [team.id, team]));
 
   return (
     <main className="min-h-screen bg-[var(--page)] text-[var(--text)]">
       <section className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-7 px-4 py-6 sm:px-6 lg:px-8">
-          <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8">
+          <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
                 Personal sports desk
@@ -23,24 +21,19 @@ export default async function Home() {
                 {michaelProfile.title}
               </h1>
             </div>
-            <div className="flex flex-col gap-3 lg:min-w-[620px]">
-              <div className="flex justify-start lg:justify-end">
-                <ThemeToggle />
-              </div>
-              <TeamSpotlightDock spotlights={data.teamSpotlights} />
+            <div className="flex justify-start lg:justify-end">
+              <ThemeToggle />
             </div>
           </header>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {data.teams.map((team) => (
-              <TeamCard
-                key={team.id}
-                team={team}
-                status={statusByTeam.get(team.id)}
-                standing={standingByTeam.get(team.id)}
-              />
-            ))}
-          </div>
+          <TodayFocus
+            liveGames={data.liveGames}
+            upcomingGames={data.upcomingGames}
+            spotlights={data.teamSpotlights}
+            teams={teamById}
+          />
+
+          <TeamSpotlightDock spotlights={data.teamSpotlights} />
         </div>
       </section>
 
@@ -70,17 +63,8 @@ export default async function Home() {
             </div>
           </DashboardSection>
 
-          <DashboardSection title="Team Rooms" eyebrow="Michael's teams">
-            <div className="grid gap-3 md:grid-cols-2">
-              {data.teams.map((team) => (
-                <TeamRoom
-                  key={team.id}
-                  team={team}
-                  status={statusByTeam.get(team.id)}
-                  news={data.news.filter((item) => item.teamId === team.id).slice(0, 2)}
-                />
-              ))}
-            </div>
+          <DashboardSection title="Team Signals" eyebrow="Quick scan">
+            <TeamSignalStrip spotlights={data.teamSpotlights} />
           </DashboardSection>
         </section>
 
@@ -98,75 +82,67 @@ export default async function Home() {
   );
 }
 
-function TeamCard({
-  team,
-  status,
-  standing,
+function TodayFocus({
+  liveGames,
+  upcomingGames,
+  spotlights,
+  teams,
 }: {
-  team: TeamConfig;
-  status?: TeamStatus;
-  standing?: TeamStandingSummary;
+  liveGames: GameSummary[];
+  upcomingGames: GameSummary[];
+  spotlights: TeamSpotlight[];
+  teams: Map<string, TeamConfig>;
 }) {
-  const featuredGame = status?.liveGame ?? status?.nextGame ?? status?.lastGame;
+  const recentResults = spotlights
+    .map((spotlight) => spotlight.lastGames[0])
+    .filter((game): game is GameSummary => Boolean(game))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const focusGames = liveGames.length ? liveGames : upcomingGames.length ? upcomingGames.slice(0, 4) : recentResults.slice(0, 4);
+  const eyebrow = liveGames.length ? "Live priority" : upcomingGames.length ? "Next up" : "Recent form";
+  const title = liveGames.length ? "Live Now" : upcomingGames.length ? "Today's Focus" : "Latest Results";
 
   return (
-    <article
-      id={team.id}
-      className="relative min-h-64 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-soft)]"
-    >
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 top-0 h-1"
-        style={{ backgroundColor: team.primaryColor }}
-      />
-      <div className="flex items-start justify-between gap-3">
+    <section className="rounded-md border border-[var(--border)] bg-[var(--surface-raised)] p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">
-            {team.league.replace("-", " ")}
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-[var(--text)]">
-            {team.displayName}
-            {standing?.label ? (
-              <span className="ml-1 text-sm font-medium text-[var(--text-muted)]">
-                ({standing.label})
-              </span>
-            ) : null}
-          </h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-soft)]">{eyebrow}</p>
+          <h2 className="text-xl font-semibold text-[var(--text)]">{title}</h2>
         </div>
-        <Image
-          src={team.logoUrl}
-          alt={`${team.displayName} logo`}
-          width={56}
-          height={56}
-          className="h-14 w-14 shrink-0 object-contain"
-        />
+        <span className="rounded-md bg-[var(--badge)] px-2.5 py-1 text-xs font-semibold text-[var(--text-muted)]">
+          {focusGames.length} items
+        </span>
       </div>
-
-      <div className="mt-6 grid gap-3">
-        <Metric label="Status" value={status?.statusLabel ?? "Loading public feed"} />
-        <Metric label="Record" value={status?.record ?? "Public feed pending"} />
+      <div className="grid gap-2 lg:grid-cols-4">
+        {focusGames.map((game) => (
+          <FocusTile key={game.id} game={game} team={teams.get(game.teamId)} mode={liveGames.length ? "live" : upcomingGames.length ? "next" : "result"} />
+        ))}
       </div>
+    </section>
+  );
+}
 
-      {featuredGame?.state === "in" ? (
-        <div className="mt-5">
-          <Scorebug game={featuredGame} team={team} variant="compact" />
+function FocusTile({ game, team, mode }: { game: GameSummary; team?: TeamConfig; mode: "live" | "next" | "result" }) {
+  const badge = mode === "live" ? "Live" : mode === "next" ? game.shortDate : game.result ?? "Final";
+
+  return (
+    <article className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: team?.primaryColor ?? "var(--border-strong)" }}
+          />
+          <p className="truncate text-sm font-semibold text-[var(--text)]">{team?.shortName ?? "Team"}</p>
         </div>
-      ) : featuredGame ? (
-        <div className="mt-5 rounded-md bg-[var(--surface-muted)] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">
-            {status?.nextGame ? "Next up" : "Latest"}
-          </p>
-          <p className="mt-1 text-sm font-semibold text-[var(--text)]">
-            {featuredGame.homeAway === "home" ? "vs" : featuredGame.homeAway === "away" ? "at" : ""}
-            {" "}
-            {featuredGame.opponent}
-          </p>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">{featuredGame.shortDate}</p>
-          <p className="mt-2 text-sm font-medium text-[var(--text)]">
-            {featuredGame.score ?? featuredGame.status}
-          </p>
-        </div>
-      ) : null}
+        <span className={`shrink-0 rounded-md px-2 py-1 text-xs font-black uppercase ${
+          mode === "live" ? "bg-red-600 text-white" : "bg-[var(--badge)] text-[var(--text)]"
+        }`}>
+          {badge}
+        </span>
+      </div>
+      <p className="mt-2 truncate text-sm font-semibold text-[var(--text)]">{formatGameTitle(game)}</p>
+      <p className="mt-1 text-xs text-[var(--text-soft)]">{game.score ?? game.status}</p>
     </article>
   );
 }
@@ -302,42 +278,35 @@ function BaseMarker({ className, active, label }: { className: string; active: b
   );
 }
 
-function TeamRoom({
-  team,
-  status,
-  news,
-}: {
-  team: TeamConfig;
-  status?: TeamStatus;
-  news: NewsItem[];
-}) {
+function TeamSignalStrip({ spotlights }: { spotlights: TeamSpotlight[] }) {
   return (
-    <article className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-4">
-      <div className="flex items-center gap-3">
-        <span
-          className="h-10 w-10 rounded-md"
-          style={{ background: `linear-gradient(135deg, ${team.primaryColor}, ${team.secondaryColor})` }}
-          aria-hidden="true"
-        />
-        <div>
-          <h3 className="font-semibold text-[var(--text)]">{team.shortName}</h3>
-          <p className="text-sm text-[var(--text-soft)]">{status?.statusLabel ?? "Feed ready"}</p>
-        </div>
-      </div>
-      <div className="mt-4 space-y-3">
-        {news.map((item) => (
-          <a
-            key={item.id}
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            className="block rounded-md border border-[var(--border)] p-3 text-sm font-medium text-[var(--text)] transition hover:border-[var(--border-strong)] hover:bg-[var(--hover)]"
+    <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface)]">
+      {spotlights.map((spotlight) => {
+        const headline = spotlight.news[0] ?? spotlight.transactions[0];
+
+        return (
+          <div
+            key={spotlight.team.id}
+            className="grid gap-2 border-b border-[var(--border)] p-3 last:border-b-0 sm:grid-cols-[140px_minmax(0,1fr)_auto] sm:items-center"
           >
-            {item.title}
-          </a>
-        ))}
-      </div>
-    </article>
+            <div className="flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: spotlight.team.primaryColor }}
+              />
+              <p className="text-sm font-semibold text-[var(--text)]">{spotlight.team.shortName}</p>
+            </div>
+            <p className="min-w-0 truncate text-sm font-medium text-[var(--text)]">
+              {headline?.title ?? spotlight.status.statusLabel}
+            </p>
+            <span className="w-fit rounded-md bg-[var(--badge)] px-2.5 py-1 text-xs font-semibold text-[var(--text-muted)]">
+              {spotlight.standing.record ?? spotlight.status.record}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -422,22 +391,4 @@ function NewsList({
       })}
     </div>
   );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-[var(--text)]">{value}</p>
-    </div>
-  );
-}
-
-function formatNewsDate(date: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(date));
 }
