@@ -342,15 +342,23 @@ function mapStandingRow(entry: unknown, team: TeamConfig): StandingsRow | null {
     asString(teamInfo.name) ??
     "Team";
   const stats = getArray(entry.stats);
-  const record =
+  const overallRecord =
     asString(getRecord(entry.record)?.summary) ??
+    getStatDisplay(stats, "total") ??
     buildRecordFromStats(stats);
+  const conferenceRecord = team.league === "college-football" ? getStatDisplay(stats, "vsconf") : undefined;
+  const record = conferenceRecord ?? overallRecord;
   const rank =
     getStatDisplay(stats, "rank") ?? getStatDisplay(stats, "playoffSeed") ?? getStatDisplay(stats, "divisionRank");
   const gamesBehind = getStatDisplay(stats, "gamesBehind");
   const points = getStatDisplay(stats, "points");
   const streak = getStatDisplay(stats, "streak");
-  const detail = [points ? `${points} pts` : undefined, gamesBehind ? `${gamesBehind} GB` : undefined]
+  const detail = [
+    overallRecord && conferenceRecord && overallRecord !== conferenceRecord ? `Overall ${overallRecord}` : undefined,
+    points ? `${points} pts` : undefined,
+    gamesBehind && gamesBehind !== "-" ? `${gamesBehind} GB` : undefined,
+    streak,
+  ]
     .filter(Boolean)
     .join(" - ") || undefined;
 

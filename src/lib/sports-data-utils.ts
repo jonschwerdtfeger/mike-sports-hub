@@ -36,7 +36,7 @@ export function buildRecordFromStats(stats: unknown[] | undefined): string | und
 export function getStatDisplay(stats: unknown[] | undefined, name: string): string | undefined {
   const stat = stats
     ?.filter(isRecord)
-    .find((item) => asString(item.name) === name || asString(item.abbreviation) === name);
+    .find((item) => asString(item.name) === name || asString(item.abbreviation) === name || asString(item.type) === name);
 
   return asString(stat?.displayValue) ?? numberToString(stat?.value);
 }

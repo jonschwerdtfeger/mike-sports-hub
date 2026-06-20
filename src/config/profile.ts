@@ -12,6 +12,7 @@ export type TeamConfig = {
   secondaryColor: string;
   logoUrl: string;
   newsTerms: string[];
+  standingsGroupId?: string;
 };
 
 export const michaelProfile = {
@@ -69,6 +70,7 @@ export const michaelProfile = {
       secondaryColor: "#FA4616",
       logoUrl: "https://a.espncdn.com/i/teamlogos/ncaa/500/57.png",
       newsTerms: ["Florida Gators football", "Gators football", "college football"],
+      standingsGroupId: "8",
     },
   ] satisfies TeamConfig[],
 };

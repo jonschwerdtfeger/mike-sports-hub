@@ -279,18 +279,21 @@ function getNextScheduledGame(games: GameSummary[], now: number): GameSummary | 
 
 async function getTeamStandings(team: TeamConfig): Promise<TeamStandings> {
   const path = SPORT_PATHS[team.league];
-  const url = `https://site.web.api.espn.com/apis/v2/sports/${path}/standings?region=us&lang=en`;
+  const baseUrl = `https://site.web.api.espn.com/apis/v2/sports/${path}/standings?region=us&lang=en`;
+  const url = team.standingsGroupId
+    ? `${baseUrl}&group=${encodeURIComponent(team.standingsGroupId)}`
+    : baseUrl;
 
   try {
     const data = await fetchJson(url, { cache: "no-store" });
     const standings = buildTeamStandings(data, team);
     const conferenceGroupId = standings.conference?.id;
-    const expandedStandings = standings.division || !conferenceGroupId || conferenceGroupId === "league-root"
+    const expandedStandings = team.standingsGroupId || standings.division || !conferenceGroupId || conferenceGroupId === "league-root"
       ? standings
       : mergeTeamStandings(
           standings,
           buildTeamStandings(
-            await fetchJson(`${url}&group=${encodeURIComponent(conferenceGroupId)}`, { cache: "no-store" }),
+            await fetchJson(`${baseUrl}&group=${encodeURIComponent(conferenceGroupId)}`, { cache: "no-store" }),
             team,
           ),
         );
