@@ -99,7 +99,7 @@ export function TeamSpotlightPanel({
         </SpotlightSection>
 
         <SpotlightSection eyebrow="Players and wire" title="Player Pulse">
-          <PlayerPulse pulse={spotlight.playerPulse} teamName={spotlight.team.shortName} />
+          <PlayerPulse pulse={spotlight.playerPulse} team={spotlight.team} />
         </SpotlightSection>
 
         <SpotlightSection eyebrow="News and transactions" title="Latest Signals">

@@ -1,7 +1,8 @@
 import { formatNewsDate } from "@/lib/sports-format";
-import type { PlayerPulse as PlayerPulseData, PlayerSignal, RosterSnapshot } from "@/lib/sports-data";
+import type { TeamConfig } from "@/config/profile";
+import type { PlayerPulse as PlayerPulseData, PlayerSignal, StarterHealth } from "@/lib/sports-data";
 
-export function PlayerPulse({ pulse, teamName }: { pulse: PlayerPulseData; teamName: string }) {
+export function PlayerPulse({ pulse, team }: { pulse: PlayerPulseData; team: TeamConfig }) {
   const signals = [...pulse.availabilitySignals, ...pulse.personnelSignals];
 
   return (
@@ -23,9 +24,9 @@ export function PlayerPulse({ pulse, teamName }: { pulse: PlayerPulseData; teamN
         )}
       </div>
 
-      <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">Hot Players</p>
-        {pulse.hotPlayers.length ? (
+      {pulse.hotPlayers.length ? (
+        <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">Hot Players</p>
           <div className="mt-2 grid gap-2">
             {pulse.hotPlayers.map((player) => (
               <div key={player.id}>
@@ -34,14 +35,10 @@ export function PlayerPulse({ pulse, teamName }: { pulse: PlayerPulseData; teamN
               </div>
             ))}
           </div>
-        ) : (
-          <p className="mt-2 text-sm font-semibold text-[var(--text)]">
-            Recent player trend tracking will appear when enough game data is available.
-          </p>
-        )}
-      </div>
+        </div>
+      ) : null}
 
-      <RosterSnapshotCard snapshot={pulse.rosterSnapshot} />
+      {pulse.starterHealth ? <StarterHealthRing health={pulse.starterHealth} team={team} /> : null}
 
       {signals.length ? (
         <div className="grid gap-2">
@@ -53,7 +50,7 @@ export function PlayerPulse({ pulse, teamName }: { pulse: PlayerPulseData; teamN
         <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">Roster Signal</p>
           <p className="mt-1 text-sm font-semibold text-[var(--text)]">
-            No major {teamName} roster signal found in public feed.
+            No major {team.shortName} roster signal found in public feed.
           </p>
         </div>
       )}
@@ -61,24 +58,53 @@ export function PlayerPulse({ pulse, teamName }: { pulse: PlayerPulseData; teamN
   );
 }
 
-function RosterSnapshotCard({ snapshot }: { snapshot: RosterSnapshot | undefined }) {
-  const detail = snapshot
-    ? [
-        snapshot.activePlayers !== undefined ? `${snapshot.activePlayers} active` : undefined,
-        snapshot.injuredPlayers !== undefined ? `${snapshot.injuredPlayers} flagged` : undefined,
-        snapshot.largestPositionGroup
-          ? `Largest group: ${snapshot.largestPositionGroup.name} (${snapshot.largestPositionGroup.count})`
-          : undefined,
-      ].filter(Boolean).join(" - ")
-    : undefined;
+function StarterHealthRing({ health, team }: { health: StarterHealth; team: TeamConfig }) {
+  const size = 78;
+  const stroke = 8;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const percent = health.percent ?? 0;
+  const dashOffset = circumference - (percent / 100) * circumference;
 
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--surface)] p-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">Roster Snapshot</p>
-      <p className="mt-1 text-sm font-semibold text-[var(--text)]">
-        {snapshot ? `${snapshot.totalPlayers} players listed` : "Roster snapshot is not available in the public feed."}
-      </p>
-      {detail ? <p className="mt-1 text-xs text-[var(--text-muted)]">{detail}</p> : null}
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text-soft)]">Starter Health</p>
+      <div className="mt-3 flex items-center gap-3">
+        <div className="relative h-[78px] w-[78px] shrink-0">
+          <svg aria-hidden="true" viewBox={`0 0 ${size} ${size}`} className="h-full w-full -rotate-90">
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              fill="none"
+              stroke="var(--border)"
+              strokeWidth={stroke}
+            />
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              fill="none"
+              stroke={team.primaryColor}
+              strokeLinecap="round"
+              strokeWidth={stroke}
+              strokeDasharray={circumference}
+              strokeDashoffset={dashOffset}
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-[var(--text)]">
+            {health.percent === null ? "--" : `${health.percent}%`}
+          </div>
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--text)]">{health.label}</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">{health.summary}</p>
+          {health.impactText ? <p className="mt-1 text-xs text-[var(--text-soft)]">{health.impactText}</p> : null}
+          {health.confidence !== "high" ? (
+            <p className="mt-1 text-xs text-[var(--text-soft)]">Prototype starter list</p>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

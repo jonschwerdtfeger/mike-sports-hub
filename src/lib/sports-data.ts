@@ -1,4 +1,5 @@
 import { michaelProfile, TeamConfig } from "@/config/profile";
+import { expectedStarterGroups } from "@/config/starters";
 import { EspnArticle, EspnEvent, getTotalRecord, mapEspnArticle, mapEspnEvent } from "@/lib/espn-mappers";
 import { asString, getArray, getRecord, isRecord, numberToString } from "@/lib/sports-data-utils";
 import {
@@ -14,7 +15,7 @@ import type {
   PlayerLeader,
   PlayerPulse,
   PlayerSignal,
-  RosterSnapshot,
+  StarterHealth,
   TeamStandingSummary,
   TeamStandings,
   TeamSpotlight,
@@ -29,7 +30,7 @@ export type {
   PlayerPulse,
   PlayerSignal,
   PlayerTrend,
-  RosterSnapshot,
+  StarterHealth,
   StandingsGroup,
   StandingsRow,
   StandingsView,
@@ -147,6 +148,15 @@ const TEAM_NEWS_FETCH_LIMIT = 20;
 
 const TOP_HEADLINES_LIMIT = 12;
 
+type AvailabilityResult = {
+  signals: PlayerSignal[];
+  affectedPlayers: Array<{
+    playerName: string;
+    status: string;
+  }>;
+  confidence: StarterHealth["confidence"];
+};
+
 const LEADER_PRIORITIES: Record<TeamConfig["league"], Array<{ label: string; terms: string[] }>> = {
   mlb: [
     { label: "Batting Average", terms: ["batting average", "avg"] },
@@ -262,8 +272,7 @@ export async function getDashboardData() {
         news,
         standings,
         teamLeaders,
-        rosterSnapshot,
-        injuries,
+        availability,
       ] = await Promise.all([
         getTeamScoreboardGames(team),
         getTeamScheduleGames(team),
@@ -271,13 +280,12 @@ export async function getDashboardData() {
         getNews(team),
         getTeamStandings(team),
         getTeamLeaders(team),
-        getTeamRosterSnapshot(team),
-        getTeamInjuries(team),
+        getTeamAvailability(team),
       ]);
       const status = buildTeamStatus(team, scoreboardGames, scheduleGames);
       const transactions = getTransactionHeadlinesFromNews(news);
       const combinedGames = dedupeGames([...scoreboardGames, ...scheduleGames]);
-      const playerPulse = buildPlayerPulse(news, transactions, teamLeaders, injuries, rosterSnapshot);
+      const playerPulse = buildPlayerPulse(team, news, transactions, teamLeaders, availability);
       const spotlightTransactions = transactions.slice(0, 4);
       const spotlightNews = dedupeNewsItems(
         news.filter((item) => !transactions.some((transaction) => areNewsItemsSimilar(transaction, item))),
@@ -468,60 +476,37 @@ async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
   }
 }
 
-async function getTeamRosterSnapshot(team: TeamConfig): Promise<RosterSnapshot | undefined> {
-  const path = SPORT_PATHS[team.league];
-  const rosterUrl = `https://site.api.espn.com/apis/site/v2/sports/${path}/teams/${team.espnTeamId}/roster`;
-  const data = await fetchJson(rosterUrl, { next: { revalidate: 900 } });
-
-  if (!isRecord(data)) {
-    return undefined;
-  }
-
-  const positionGroups = getArray(data.athletes)?.filter(isRecord) ?? [];
-  const groupSummaries = positionGroups.map((group) => {
-    const players = getArray(group.items)?.filter(isRecord) ?? [];
-    return {
-      name: asString(getRecord(group.position)?.displayName) ?? asString(group.position) ?? "Roster",
-      players,
-    };
-  });
-  const players = groupSummaries.flatMap((group) => group.players);
-
-  if (!players.length) {
-    return undefined;
-  }
-
-  const activePlayers = players.filter((player) => getRosterPlayerStatus(player) === "active").length;
-  const injuredPlayers = players.filter((player) => {
-    const status = getRosterPlayerStatus(player);
-    const injuries = getArray(player.injuries) ?? [];
-    return injuries.length > 0 || Boolean(status && status !== "active");
-  }).length;
-  const largestPositionGroup = groupSummaries
-    .map((group) => ({ name: group.name, count: group.players.length }))
-    .sort((a, b) => b.count - a.count)[0];
-
-  return {
-    totalPlayers: players.length,
-    activePlayers,
-    injuredPlayers,
-    largestPositionGroup,
-  };
-}
-
-async function getTeamInjuries(team: TeamConfig): Promise<PlayerSignal[]> {
+async function getTeamAvailability(team: TeamConfig): Promise<AvailabilityResult> {
   const path = SPORT_PATHS[team.league];
   const injuriesUrl = `https://site.api.espn.com/apis/site/v2/sports/${path}/injuries?team=${team.espnTeamId}`;
   const data = await fetchJson(injuriesUrl, { next: { revalidate: 900 } });
 
   if (!isRecord(data) || !isEspnTeamScoped(data.team, team)) {
-    return [];
+    return {
+      signals: [],
+      affectedPlayers: [],
+      confidence: "unknown",
+    };
   }
 
-  return (getArray(data.injuries) ?? [])
+  const injuries = (getArray(data.injuries) ?? [])
     .filter(isRecord)
-    .filter((injury) => isEspnTeamScoped(getRecord(getRecord(injury.athlete)?.team) ?? data.team, team))
-    .sort((a, b) => getInjuryTimestamp(b) - getInjuryTimestamp(a))
+    .filter((injury) => isEspnTeamScoped(getRecord(getRecord(injury.athlete)?.team) ?? data.team, team));
+  const sortedInjuries = injuries.sort((a, b) => getInjuryTimestamp(b) - getInjuryTimestamp(a));
+  const affectedPlayers = sortedInjuries.flatMap((injury) => {
+    const athlete = getRecord(injury.athlete);
+    const playerName = asString(athlete?.displayName) ?? asString(athlete?.shortName);
+
+    if (!playerName) {
+      return [];
+    }
+
+    return [{
+      playerName,
+      status: asString(injury.status) ?? asString(injury.type) ?? "Availability update",
+    }];
+  });
+  const signals = sortedInjuries
     .slice(0, PLAYER_SIGNAL_LIMIT)
     .map((injury, index) => {
       const athlete = getRecord(injury.athlete);
@@ -538,11 +523,12 @@ async function getTeamInjuries(team: TeamConfig): Promise<PlayerSignal[]> {
         publishedAt: asString(injury.date),
       };
     });
-}
 
-function getRosterPlayerStatus(player: Record<string, unknown>): string | undefined {
-  const status = getRecord(player.status);
-  return normalizeSearchText(asString(status?.type) ?? asString(status?.name) ?? asString(player.status) ?? "").trim() || undefined;
+  return {
+    signals,
+    affectedPlayers,
+    confidence: "high",
+  };
 }
 
 function isEspnTeamScoped(value: unknown, team: TeamConfig): boolean {
@@ -720,11 +706,11 @@ function getNewsTimestamp(item: NewsItem): number {
 }
 
 function buildPlayerPulse(
+  team: TeamConfig,
   news: NewsItem[],
   transactions: NewsItem[],
   teamLeaders: PlayerLeader[],
-  injurySignals: PlayerSignal[],
-  rosterSnapshot: RosterSnapshot | undefined,
+  availability: AvailabilityResult,
 ): PlayerPulse {
   const newsAvailabilitySignals = buildPlayerSignals(
     news.filter((item) => !isFallbackNewsItem(item) && isAvailabilityHeadline(item)),
@@ -734,13 +720,82 @@ function buildPlayerPulse(
   return {
     teamLeaders,
     hotPlayers: [],
-    availabilitySignals: dedupePlayerSignals([...injurySignals, ...newsAvailabilitySignals]).slice(0, PLAYER_SIGNAL_LIMIT),
+    availabilitySignals: dedupePlayerSignals([...availability.signals, ...newsAvailabilitySignals]).slice(0, PLAYER_SIGNAL_LIMIT),
     personnelSignals: buildPlayerSignals(
       transactions.filter((item) => !isFallbackNewsItem(item) && isPersonnelHeadline(item)),
       "Personnel Signal",
     ),
-    rosterSnapshot,
+    starterHealth: buildStarterHealth(team, availability),
   };
+}
+
+function buildStarterHealth(team: TeamConfig, availability: AvailabilityResult): StarterHealth | undefined {
+  const starterGroup = expectedStarterGroups[team.id];
+  if (!starterGroup?.players.length) {
+    return undefined;
+  }
+
+  if (availability.confidence === "unknown") {
+    return {
+      percent: null,
+      healthyStarters: 0,
+      totalStarters: starterGroup.players.length,
+      affectedStarters: [],
+      label: "Starter health unavailable",
+      confidence: "unknown",
+      summary: "Availability data unavailable",
+      impactText: "Availability data unavailable",
+    };
+  }
+
+  const affectedByName = new Map(
+    availability.affectedPlayers.map((player) => [normalizePlayerName(player.playerName), player]),
+  );
+  const affectedStarters = starterGroup.players.flatMap((starter) => {
+    const affectedPlayer = affectedByName.get(normalizePlayerName(starter.playerName));
+
+    if (!affectedPlayer) {
+      return [];
+    }
+
+    return [{
+      playerName: starter.playerName,
+      role: starter.role,
+      status: affectedPlayer.status,
+    }];
+  });
+  const totalStarters = starterGroup.players.length;
+  const healthyStarters = Math.max(totalStarters - affectedStarters.length, 0);
+  const percent = Math.round((healthyStarters / totalStarters) * 100);
+
+  return {
+    percent,
+    healthyStarters,
+    totalStarters,
+    affectedStarters,
+    label: getStarterHealthLabel(percent),
+    confidence: availability.confidence === "high" ? starterGroup.confidence : availability.confidence,
+    summary: `${healthyStarters} of ${totalStarters} ${starterGroup.summaryLabel} healthy`,
+    impactText: affectedStarters.length
+      ? `${affectedStarters.length} ${affectedStarters.length === 1 ? "starter" : "starters"} affected`
+      : undefined,
+  };
+}
+
+function getStarterHealthLabel(percent: number): StarterHealth["label"] {
+  if (percent >= 95) {
+    return "Full strength";
+  }
+
+  if (percent >= 80) {
+    return "Mostly healthy";
+  }
+
+  if (percent >= 65) {
+    return "Impacted";
+  }
+
+  return "Heavily impacted";
 }
 
 function buildPlayerSignals(items: NewsItem[], label: string): PlayerSignal[] {
@@ -795,6 +850,15 @@ function matchesAnyHeadlineTerm(title: string, terms: string[]): boolean {
 
 function normalizeSearchText(value: string): string {
   return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+}
+
+function normalizePlayerName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(jr|sr|ii|iii|iv)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function getTransactionHeadlinesFromNews(news: NewsItem[]): NewsItem[] {

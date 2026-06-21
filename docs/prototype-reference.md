@@ -40,11 +40,16 @@ SportsHub is a personal sports command center that lets a fan feel completely ca
 2. Standings
 3. Last 5 / Next 5
 4. Player Pulse
+   - Team Leaders remain the primary player update
+   - Starter Health shows a team-colored percentage indicator for how many expected starters/core players are currently healthy
+   - Availability Watch explains who is affected when public injury data is available
+   - Starter/core lists are prototype-configured for now and should later become provider/database-driven
 5. Latest Signals
 
 ## Known Prototype Limitations
 
 - Hard-coded Michael profile
+- Prototype-configured starter/core player lists
 - Direct ESPN dependency
 - No authentication
 - No database-backed team selection

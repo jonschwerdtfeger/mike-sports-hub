@@ -104,14 +104,19 @@ export type PlayerSignal = {
   publishedAt?: string;
 };
 
-export type RosterSnapshot = {
-  totalPlayers: number;
-  activePlayers?: number;
-  injuredPlayers?: number;
-  largestPositionGroup?: {
-    name: string;
-    count: number;
-  };
+export type StarterHealth = {
+  percent: number | null;
+  healthyStarters: number;
+  totalStarters: number;
+  affectedStarters: Array<{
+    playerName: string;
+    role: string;
+    status: string;
+  }>;
+  label: "Full strength" | "Mostly healthy" | "Impacted" | "Heavily impacted" | "Starter health unavailable";
+  confidence: "high" | "medium" | "low" | "unknown";
+  summary: string;
+  impactText?: string;
 };
 
 export type PlayerPulse = {
@@ -119,7 +124,7 @@ export type PlayerPulse = {
   hotPlayers: PlayerTrend[];
   availabilitySignals: PlayerSignal[];
   personnelSignals: PlayerSignal[];
-  rosterSnapshot?: RosterSnapshot;
+  starterHealth?: StarterHealth;
 };
 
 export type TeamSpotlight = {
