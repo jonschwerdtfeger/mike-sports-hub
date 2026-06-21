@@ -70,7 +70,7 @@ export default async function Home() {
 
         <aside className="space-y-6">
           <DashboardSection title="Top Headlines" eyebrow="News feed">
-            <NewsList items={data.news.slice(0, 12)} teams={teamById} />
+            <NewsList items={data.news} teams={teamById} />
           </DashboardSection>
 
           <DashboardSection title="Roster Wire" eyebrow="Transactions and injuries">

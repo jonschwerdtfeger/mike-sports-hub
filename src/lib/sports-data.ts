@@ -67,6 +67,8 @@ const TRANSACTION_TERMS = [
   "waive",
 ];
 
+const TOP_HEADLINES_LIMIT = 12;
+
 export async function getTeamStatus(team: TeamConfig): Promise<TeamStatus> {
   const [scoreboardGames, scheduledGames] = await Promise.all([
     getTeamScoreboardGames(team),
@@ -195,7 +197,7 @@ export async function getDashboardData() {
       .map((status) => status.nextGame)
       .filter((game): game is GameSummary => Boolean(game))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-    news: teamData.flatMap((item) => item.news),
+    news: buildTopHeadlines(teamData, teams, TOP_HEADLINES_LIMIT),
     transactions: teamData.flatMap((item) => item.transactions).slice(0, 8),
   };
 }
@@ -367,6 +369,94 @@ function dedupeGames(games: GameSummary[]): GameSummary[] {
     seen.add(key);
     return true;
   });
+}
+
+function buildTopHeadlines(
+  teamData: Array<{ team: TeamConfig; news: NewsItem[] }>,
+  teams: TeamConfig[],
+  limit: number,
+): NewsItem[] {
+  const selected: NewsItem[] = [];
+  const sortedNews = sortNewsByPublishedDateDesc(teamData.flatMap((item) => item.news));
+
+  for (const team of teams) {
+    const teamHeadline = sortedNews.find((item) =>
+      item.teamId === team.id && !selected.some((selectedItem) => areNewsItemsSimilar(selectedItem, item)),
+    );
+
+    if (teamHeadline) {
+      selected.push(teamHeadline);
+    }
+  }
+
+  for (const headline of sortedNews) {
+    if (selected.length >= limit) {
+      break;
+    }
+
+    if (!selected.some((item) => areNewsItemsSimilar(item, headline))) {
+      selected.push(headline);
+    }
+  }
+
+  return sortNewsByPublishedDateDesc(selected).slice(0, limit);
+}
+
+function sortNewsByPublishedDateDesc(items: NewsItem[]): NewsItem[] {
+  return [...items].sort((a, b) => getNewsTimestamp(b) - getNewsTimestamp(a));
+}
+
+function areNewsItemsSimilar(a: NewsItem, b: NewsItem): boolean {
+  const aUrl = normalizeNewsUrl(a.url);
+  const bUrl = normalizeNewsUrl(b.url);
+
+  if (aUrl && bUrl && aUrl === bUrl) {
+    return true;
+  }
+
+  const aTitle = normalizeNewsTitle(a.title);
+  const bTitle = normalizeNewsTitle(b.title);
+
+  if (!aTitle || !bTitle) {
+    return false;
+  }
+
+  if (aTitle === bTitle) {
+    return true;
+  }
+
+  const aTerms = new Set(aTitle.split(" ").filter(Boolean));
+  const bTerms = new Set(bTitle.split(" ").filter(Boolean));
+  const sharedTerms = Array.from(aTerms).filter((term) => bTerms.has(term)).length;
+  const similarity = sharedTerms / Math.max(aTerms.size, bTerms.size);
+
+  return similarity >= 0.85;
+}
+
+function normalizeNewsUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.toString().replace(/\/$/, "").toLowerCase();
+  } catch {
+    return url.trim().replace(/[?#].*$/, "").replace(/\/$/, "").toLowerCase();
+  }
+}
+
+function normalizeNewsTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/&amp;/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(a|an|and|for|from|in|of|on|the|to|with)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getNewsTimestamp(item: NewsItem): number {
+  const timestamp = new Date(item.publishedAt).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function getTransactionHeadlinesFromNews(team: TeamConfig, news: NewsItem[]): NewsItem[] {
