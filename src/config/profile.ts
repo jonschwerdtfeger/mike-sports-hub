@@ -15,6 +15,16 @@ export type TeamConfig = {
   standingsGroupId?: string;
 };
 
+export type UserPreferences = {
+  timeZone: string;
+  theme: "light" | "dark" | "system";
+};
+
+export const michaelPreferences = {
+  timeZone: "America/New_York",
+  theme: "system",
+} satisfies UserPreferences;
+
 export const michaelProfile = {
   displayName: "Michael",
   title: "Michael's SportsHub",
