@@ -40,7 +40,7 @@ export const michaelProfile = {
       primaryColor: "#E81828",
       secondaryColor: "#002D72",
       logoUrl: "https://a.espncdn.com/i/teamlogos/mlb/500/phi.png",
-      newsTerms: ["Phillies", "Philadelphia Phillies", "MLB"],
+      newsTerms: ["Phillies", "Philadelphia Phillies"],
     },
     {
       id: "lightning",
@@ -53,7 +53,7 @@ export const michaelProfile = {
       primaryColor: "#002868",
       secondaryColor: "#FFFFFF",
       logoUrl: "https://a.espncdn.com/i/teamlogos/nhl/500/tb.png",
-      newsTerms: ["Lightning", "Tampa Bay Lightning", "NHL"],
+      newsTerms: ["Lightning", "Tampa Bay Lightning"],
     },
     {
       id: "patriots",
@@ -66,7 +66,7 @@ export const michaelProfile = {
       primaryColor: "#002244",
       secondaryColor: "#C60C30",
       logoUrl: "https://a.espncdn.com/i/teamlogos/nfl/500/ne.png",
-      newsTerms: ["Patriots", "New England Patriots", "NFL"],
+      newsTerms: ["Patriots", "New England Patriots"],
     },
     {
       id: "gators-football",
@@ -79,7 +79,7 @@ export const michaelProfile = {
       primaryColor: "#0021A5",
       secondaryColor: "#FA4616",
       logoUrl: "https://a.espncdn.com/i/teamlogos/ncaa/500/57.png",
-      newsTerms: ["Florida Gators football", "Gators football", "college football"],
+      newsTerms: ["Florida Gators", "Florida Gators football", "Gators football"],
       standingsGroupId: "8",
     },
   ] satisfies TeamConfig[],

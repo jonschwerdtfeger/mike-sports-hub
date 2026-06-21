@@ -1,6 +1,6 @@
 import { michaelProfile, TeamConfig } from "@/config/profile";
 import { EspnArticle, EspnEvent, getTotalRecord, mapEspnArticle, mapEspnEvent } from "@/lib/espn-mappers";
-import { asString, getArray, getRecord, isRecord } from "@/lib/sports-data-utils";
+import { asString, getArray, getRecord, isRecord, numberToString } from "@/lib/sports-data-utils";
 import {
   buildApTop25Standings,
   buildTeamStandings,
@@ -11,7 +11,10 @@ import {
 import type {
   GameSummary,
   NewsItem,
-  RosterHighlight,
+  PlayerLeader,
+  PlayerPulse,
+  PlayerSignal,
+  RosterSnapshot,
   TeamStandingSummary,
   TeamStandings,
   TeamSpotlight,
@@ -22,7 +25,11 @@ export type {
   GameCompetitor,
   GameSummary,
   NewsItem,
-  RosterHighlight,
+  PlayerLeader,
+  PlayerPulse,
+  PlayerSignal,
+  PlayerTrend,
+  RosterSnapshot,
   StandingsGroup,
   StandingsRow,
   StandingsView,
@@ -40,6 +47,13 @@ const SPORT_PATHS: Record<TeamConfig["league"], string> = {
   "college-football": "football/college-football",
 };
 
+const CORE_LEAGUE_PATHS: Record<TeamConfig["league"], string> = {
+  mlb: "mlb",
+  nhl: "nhl",
+  nfl: "nfl",
+  "college-football": "college-football",
+};
+
 const FALLBACK_STATUS: Record<string, Pick<TeamStatus, "record" | "statusLabel">> = {
   phillies: { record: "Follow live feed", statusLabel: "MLB updates ready" },
   lightning: { record: "Follow live feed", statusLabel: "NHL updates ready" },
@@ -47,27 +61,127 @@ const FALLBACK_STATUS: Record<string, Pick<TeamStatus, "record" | "statusLabel">
   "gators-football": { record: "Follow live feed", statusLabel: "CFB updates ready" },
 };
 
-const TRANSACTION_TERMS = [
-  "acquire",
-  "assign",
-  "claim",
-  "deal",
-  "draft",
-  "injury",
+const AVAILABILITY_TERMS = [
+  "available",
+  "availability",
+  "concussion",
+  "day to day",
+  "doubtful",
+  "illness",
+  "il",
   "injured",
-  "IR",
-  "option",
-  "practice squad",
-  "recall",
-  "release",
-  "roster",
-  "sign",
-  "trade",
-  "transfer",
-  "waive",
+  "injured list",
+  "injured reserve",
+  "injuries",
+  "injury",
+  "ir",
+  "out for",
+  "out vs",
+  "physically unable to perform",
+  "pup",
+  "probable",
+  "questionable",
+  "rehab",
+  "returned",
+  "returns",
+  "ruled out",
+  "sidelined",
+  "surgery",
+  "suspended",
+  "suspension",
+  "unavailable",
 ];
 
+const PERSONNEL_TERMS = [
+  "activate",
+  "activated",
+  "acquire",
+  "acquired",
+  "assign",
+  "call up",
+  "called up",
+  "claim",
+  "claimed",
+  "contract",
+  "deal",
+  "designate",
+  "designated",
+  "dfa",
+  "draft",
+  "drafted",
+  "extension",
+  "option",
+  "optioned",
+  "practice squad",
+  "promote",
+  "promoted",
+  "recall",
+  "recalled",
+  "release",
+  "released",
+  "reinstate",
+  "reinstated",
+  "roster",
+  "sign",
+  "signed",
+  "signs",
+  "signing",
+  "trade",
+  "traded",
+  "trades",
+  "transfer",
+  "waive",
+  "waived",
+  "waivers",
+];
+
+const TRANSACTION_TERMS = [
+  ...AVAILABILITY_TERMS,
+  ...PERSONNEL_TERMS,
+];
+
+const PLAYER_SIGNAL_LIMIT = 2;
+const LEADER_SEASON_TYPE = 2;
+
+const TEAM_NEWS_FETCH_LIMIT = 20;
+
 const TOP_HEADLINES_LIMIT = 12;
+
+const LEADER_PRIORITIES: Record<TeamConfig["league"], Array<{ label: string; terms: string[] }>> = {
+  mlb: [
+    { label: "Batting Average", terms: ["batting average", "avg"] },
+    { label: "Home Runs", terms: ["home runs", "home run", "hr", "hrs"] },
+    { label: "Hits", terms: ["hits", "hit", "h"] },
+    { label: "RBI", terms: ["rbi", "runs batted in"] },
+    { label: "ERA", terms: ["era", "earned run average"] },
+    { label: "Strikeouts", terms: ["strikeouts", "strikeout", "so", "k", "ks"] },
+  ],
+  nhl: [
+    { label: "Goals", terms: ["goals", "goal", "g"] },
+    { label: "Assists", terms: ["assists", "assist", "a"] },
+    { label: "Points", terms: ["points", "point", "pts"] },
+    { label: "Save Percentage", terms: ["save percentage", "save pct", "save percent", "sv%"] },
+    { label: "Goals Against Average", terms: ["goals against average", "gaa"] },
+  ],
+  nfl: [
+    { label: "Passing Yards", terms: ["passing yards", "pass yards"] },
+    { label: "Rushing Yards", terms: ["rushing yards", "rush yards"] },
+    { label: "Receiving Yards", terms: ["receiving yards", "receiver yards"] },
+    { label: "Touchdowns", terms: ["touchdowns", "touchdown", "td", "tds"] },
+    { label: "Tackles", terms: ["tackles", "total tackles"] },
+    { label: "Sacks", terms: ["sacks", "sack"] },
+    { label: "Interceptions", terms: ["interceptions", "interception", "ints", "int"] },
+  ],
+  "college-football": [
+    { label: "Passing Yards", terms: ["passing yards", "pass yards"] },
+    { label: "Rushing Yards", terms: ["rushing yards", "rush yards"] },
+    { label: "Receiving Yards", terms: ["receiving yards", "receiver yards"] },
+    { label: "Touchdowns", terms: ["touchdowns", "touchdown", "td", "tds"] },
+    { label: "Tackles", terms: ["tackles", "total tackles"] },
+    { label: "Sacks", terms: ["sacks", "sack"] },
+    { label: "Interceptions", terms: ["interceptions", "interception", "ints", "int"] },
+  ],
+};
 
 export async function getTeamStatus(team: TeamConfig): Promise<TeamStatus> {
   const [scoreboardGames, scheduledGames] = await Promise.all([
@@ -110,28 +224,31 @@ export async function getTeamStanding(team: TeamConfig): Promise<TeamStandingSum
 
 export async function getNews(team: TeamConfig): Promise<NewsItem[]> {
   const path = SPORT_PATHS[team.league];
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/news?teams=${team.espnTeamId}&limit=8`;
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/news?teams=${team.espnTeamId}&limit=${TEAM_NEWS_FETCH_LIMIT}`;
 
   try {
     const response = await fetch(url, { next: { revalidate: 900 } });
     if (!response.ok) {
-      return fallbackNews(team, "news");
+      return [];
     }
 
     const data = await response.json();
     const articles = Array.isArray(data.articles) ? data.articles : [];
-    const items = articles.map((article: EspnArticle, index: number) =>
-      mapEspnArticle(team, article, index, "news"),
-    );
-    return items.length ? items : fallbackNews(team, "news");
+    const items = articles
+      .filter((article: EspnArticle) => isArticleRelevantToTeam(team, article))
+      .map((article: EspnArticle, index: number) =>
+        mapEspnArticle(team, article, index, "news"),
+      );
+
+    return dedupeNewsItems(sortNewsByPublishedDateDesc(items));
   } catch {
-    return fallbackNews(team, "news");
+    return [];
   }
 }
 
 export async function getTransactionHeadlines(team: TeamConfig): Promise<NewsItem[]> {
   const news = await getNews(team);
-  return getTransactionHeadlinesFromNews(team, news);
+  return getTransactionHeadlinesFromNews(news);
 }
 
 export async function getDashboardData() {
@@ -144,18 +261,27 @@ export async function getDashboardData() {
         standing,
         news,
         standings,
-        rosterHighlights,
+        teamLeaders,
+        rosterSnapshot,
+        injuries,
       ] = await Promise.all([
         getTeamScoreboardGames(team),
         getTeamScheduleGames(team),
         getTeamStanding(team),
         getNews(team),
         getTeamStandings(team),
-        getRosterHighlights(team),
+        getTeamLeaders(team),
+        getTeamRosterSnapshot(team),
+        getTeamInjuries(team),
       ]);
       const status = buildTeamStatus(team, scoreboardGames, scheduleGames);
-      const transactions = getTransactionHeadlinesFromNews(team, news);
+      const transactions = getTransactionHeadlinesFromNews(news);
       const combinedGames = dedupeGames([...scoreboardGames, ...scheduleGames]);
+      const playerPulse = buildPlayerPulse(news, transactions, teamLeaders, injuries, rosterSnapshot);
+      const spotlightTransactions = transactions.slice(0, 4);
+      const spotlightNews = dedupeNewsItems(
+        news.filter((item) => !transactions.some((transaction) => areNewsItemsSimilar(transaction, item))),
+      ).slice(0, 4);
       const spotlight: TeamSpotlight = {
         team,
         status,
@@ -163,11 +289,9 @@ export async function getDashboardData() {
         lastGames: getLastCompletedGames(combinedGames, 5),
         nextGames: getNextScheduledGames(scheduleGames, 5),
         standings: ensureSelectedStandings(team, standing, standings),
-        rosterHighlights: rosterHighlights.length
-          ? rosterHighlights
-          : fallbackRosterHighlights(team, transactions),
-        news: news.slice(0, 4),
-        transactions: transactions.slice(0, 4),
+        playerPulse,
+        news: spotlightNews,
+        transactions: spotlightTransactions,
       };
 
       return {
@@ -198,7 +322,7 @@ export async function getDashboardData() {
       .filter((game): game is GameSummary => Boolean(game))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     news: buildTopHeadlines(teamData, teams, TOP_HEADLINES_LIMIT),
-    transactions: teamData.flatMap((item) => item.transactions).slice(0, 8),
+    transactions: sortNewsByPublishedDateDesc(dedupeNewsItems(teamData.flatMap((item) => item.transactions))).slice(0, 8),
   };
 }
 
@@ -315,18 +439,20 @@ async function getTeamStandings(team: TeamConfig): Promise<TeamStandings> {
   }
 }
 
-async function getRosterHighlights(team: TeamConfig): Promise<RosterHighlight[]> {
-  const path = SPORT_PATHS[team.league];
-  const leadersUrl = `https://site.api.espn.com/apis/site/v2/sports/${path}/teams/${team.espnTeamId}/leaders`;
-  const rosterUrl = `https://site.api.espn.com/apis/site/v2/sports/${path}/teams/${team.espnTeamId}/roster`;
-  const [leadersData, rosterData] = await Promise.all([
-    fetchJson(leadersUrl, { next: { revalidate: 900 } }),
-    fetchJson(rosterUrl, { next: { revalidate: 900 } }),
-  ]);
-  const leaderHighlights = extractLeaderHighlights(leadersData);
-  const rosterHighlights = extractRosterHighlights(rosterData);
+async function getTeamLeaders(team: TeamConfig): Promise<PlayerLeader[]> {
+  for (const season of getLeaderSeasonCandidates(team)) {
+    const leadersUrl = `https://sports.core.api.espn.com/v2/sports/${team.sport}/leagues/${CORE_LEAGUE_PATHS[team.league]}/seasons/${season}/types/${LEADER_SEASON_TYPE}/teams/${team.espnTeamId}/leaders?lang=en&region=us`;
+    const leaders = await extractCoreTeamLeaders(
+      await fetchJson(leadersUrl, { next: { revalidate: 900 } }),
+      team,
+    );
 
-  return [...leaderHighlights, ...rosterHighlights].slice(0, 4);
+    if (leaders.length) {
+      return leaders;
+    }
+  }
+
+  return [];
 }
 
 async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
@@ -340,6 +466,93 @@ async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
   } catch {
     return undefined;
   }
+}
+
+async function getTeamRosterSnapshot(team: TeamConfig): Promise<RosterSnapshot | undefined> {
+  const path = SPORT_PATHS[team.league];
+  const rosterUrl = `https://site.api.espn.com/apis/site/v2/sports/${path}/teams/${team.espnTeamId}/roster`;
+  const data = await fetchJson(rosterUrl, { next: { revalidate: 900 } });
+
+  if (!isRecord(data)) {
+    return undefined;
+  }
+
+  const positionGroups = getArray(data.athletes)?.filter(isRecord) ?? [];
+  const groupSummaries = positionGroups.map((group) => {
+    const players = getArray(group.items)?.filter(isRecord) ?? [];
+    return {
+      name: asString(getRecord(group.position)?.displayName) ?? asString(group.position) ?? "Roster",
+      players,
+    };
+  });
+  const players = groupSummaries.flatMap((group) => group.players);
+
+  if (!players.length) {
+    return undefined;
+  }
+
+  const activePlayers = players.filter((player) => getRosterPlayerStatus(player) === "active").length;
+  const injuredPlayers = players.filter((player) => {
+    const status = getRosterPlayerStatus(player);
+    const injuries = getArray(player.injuries) ?? [];
+    return injuries.length > 0 || Boolean(status && status !== "active");
+  }).length;
+  const largestPositionGroup = groupSummaries
+    .map((group) => ({ name: group.name, count: group.players.length }))
+    .sort((a, b) => b.count - a.count)[0];
+
+  return {
+    totalPlayers: players.length,
+    activePlayers,
+    injuredPlayers,
+    largestPositionGroup,
+  };
+}
+
+async function getTeamInjuries(team: TeamConfig): Promise<PlayerSignal[]> {
+  const path = SPORT_PATHS[team.league];
+  const injuriesUrl = `https://site.api.espn.com/apis/site/v2/sports/${path}/injuries?team=${team.espnTeamId}`;
+  const data = await fetchJson(injuriesUrl, { next: { revalidate: 900 } });
+
+  if (!isRecord(data) || !isEspnTeamScoped(data.team, team)) {
+    return [];
+  }
+
+  return (getArray(data.injuries) ?? [])
+    .filter(isRecord)
+    .filter((injury) => isEspnTeamScoped(getRecord(getRecord(injury.athlete)?.team) ?? data.team, team))
+    .sort((a, b) => getInjuryTimestamp(b) - getInjuryTimestamp(a))
+    .slice(0, PLAYER_SIGNAL_LIMIT)
+    .map((injury, index) => {
+      const athlete = getRecord(injury.athlete);
+      const playerName = asString(athlete?.displayName) ?? asString(athlete?.shortName) ?? `${team.shortName} player`;
+      const status = asString(injury.status) ?? asString(injury.type) ?? "Availability update";
+      const detail = asString(injury.details) ?? asString(injury.description) ?? asString(injury.comment);
+      const title = detail ? `${playerName}: ${status} - ${detail}` : `${playerName}: ${status}`;
+
+      return {
+        id: `${team.id}-injury-${asString(injury.date) ?? index}-${playerName}`,
+        label: "Availability Watch",
+        title,
+        source: "ESPN Injuries",
+        publishedAt: asString(injury.date),
+      };
+    });
+}
+
+function getRosterPlayerStatus(player: Record<string, unknown>): string | undefined {
+  const status = getRecord(player.status);
+  return normalizeSearchText(asString(status?.type) ?? asString(status?.name) ?? asString(player.status) ?? "").trim() || undefined;
+}
+
+function isEspnTeamScoped(value: unknown, team: TeamConfig): boolean {
+  const record = getRecord(value);
+  return String(record?.id ?? "") === team.espnTeamId;
+}
+
+function getInjuryTimestamp(injury: Record<string, unknown>): number {
+  const timestamp = new Date(asString(injury.date) ?? "").getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function getLastCompletedGames(games: GameSummary[], limit: number): GameSummary[] {
@@ -371,13 +584,60 @@ function dedupeGames(games: GameSummary[]): GameSummary[] {
   });
 }
 
+function isArticleRelevantToTeam(team: TeamConfig, article: EspnArticle): boolean {
+  const articleTeamIds = getArticleTeamIds(article);
+
+  if (articleTeamIds.length) {
+    return articleTeamIds.includes(team.espnTeamId);
+  }
+
+  return matchesTeamIdentity(team, article);
+}
+
+function getArticleTeamIds(article: EspnArticle): string[] {
+  return article.categories
+    ?.filter((category) => category.type === "team")
+    .map((category) => category.teamId ?? category.team?.id)
+    .filter((id): id is number | string => id !== undefined && id !== null)
+    .map(String) ?? [];
+}
+
+function matchesTeamIdentity(team: TeamConfig, article: EspnArticle): boolean {
+  const searchableText = normalizeSearchText([
+    article.headline,
+    article.description,
+    article.links?.web?.href,
+  ].filter(Boolean).join(" "));
+  const identityTerms = [
+    team.displayName,
+    team.shortName,
+    ...team.newsTerms,
+  ];
+
+  return identityTerms.some((term) =>
+    searchableText.includes(normalizeSearchText(term)),
+  );
+}
+
+function dedupeNewsItems(items: NewsItem[]): NewsItem[] {
+  const selected: NewsItem[] = [];
+
+  for (const item of items) {
+    if (!selected.some((selectedItem) => areNewsItemsSimilar(selectedItem, item))) {
+      selected.push(item);
+    }
+  }
+
+  return selected;
+}
+
 function buildTopHeadlines(
   teamData: Array<{ team: TeamConfig; news: NewsItem[] }>,
   teams: TeamConfig[],
   limit: number,
 ): NewsItem[] {
   const selected: NewsItem[] = [];
-  const sortedNews = sortNewsByPublishedDateDesc(teamData.flatMap((item) => item.news));
+  const sortedNews = sortNewsByPublishedDateDesc(dedupeNewsItems(teamData.flatMap((item) => item.news)));
 
   for (const team of teams) {
     const teamHeadline = sortedNews.find((item) =>
@@ -459,125 +719,213 @@ function getNewsTimestamp(item: NewsItem): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function getTransactionHeadlinesFromNews(team: TeamConfig, news: NewsItem[]): NewsItem[] {
-  const filtered = news.filter((item) =>
-    TRANSACTION_TERMS.some((term) =>
-      item.title.toLowerCase().includes(term.toLowerCase()),
-    ),
+function buildPlayerPulse(
+  news: NewsItem[],
+  transactions: NewsItem[],
+  teamLeaders: PlayerLeader[],
+  injurySignals: PlayerSignal[],
+  rosterSnapshot: RosterSnapshot | undefined,
+): PlayerPulse {
+  const newsAvailabilitySignals = buildPlayerSignals(
+    news.filter((item) => !isFallbackNewsItem(item) && isAvailabilityHeadline(item)),
+    "Availability Watch",
   );
 
-  return (filtered.length ? filtered : fallbackNews(team, "transaction")).map((item) => ({
+  return {
+    teamLeaders,
+    hotPlayers: [],
+    availabilitySignals: dedupePlayerSignals([...injurySignals, ...newsAvailabilitySignals]).slice(0, PLAYER_SIGNAL_LIMIT),
+    personnelSignals: buildPlayerSignals(
+      transactions.filter((item) => !isFallbackNewsItem(item) && isPersonnelHeadline(item)),
+      "Personnel Signal",
+    ),
+    rosterSnapshot,
+  };
+}
+
+function buildPlayerSignals(items: NewsItem[], label: string): PlayerSignal[] {
+  return dedupeNewsItems(sortNewsByPublishedDateDesc(items))
+    .slice(0, PLAYER_SIGNAL_LIMIT)
+    .map((item) => ({
+      id: `${item.id}-${label}`,
+      label,
+      title: item.title,
+      source: item.source,
+      url: item.url,
+      publishedAt: item.publishedAt,
+    }));
+}
+
+function dedupePlayerSignals(items: PlayerSignal[]): PlayerSignal[] {
+  const selected: PlayerSignal[] = [];
+
+  for (const item of items) {
+    const matchingItem = selected.some((selectedItem) => {
+      if (item.url && selectedItem.url && normalizeNewsUrl(item.url) === normalizeNewsUrl(selectedItem.url)) {
+        return true;
+      }
+
+      return normalizeNewsTitle(item.title) === normalizeNewsTitle(selectedItem.title);
+    });
+
+    if (!matchingItem) {
+      selected.push(item);
+    }
+  }
+
+  return selected;
+}
+
+function isAvailabilityHeadline(item: NewsItem): boolean {
+  return matchesAnyHeadlineTerm(item.title, AVAILABILITY_TERMS);
+}
+
+function isPersonnelHeadline(item: NewsItem): boolean {
+  return matchesAnyHeadlineTerm(item.title, PERSONNEL_TERMS);
+}
+
+function isFallbackNewsItem(item: NewsItem): boolean {
+  return item.source === "ESPN Search" || item.id.endsWith("-fallback");
+}
+
+function matchesAnyHeadlineTerm(title: string, terms: string[]): boolean {
+  const searchableTitle = normalizeSearchText(title);
+  return terms.some((term) => searchableTitle.includes(normalizeSearchText(term)));
+}
+
+function normalizeSearchText(value: string): string {
+  return ` ${value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+}
+
+function getTransactionHeadlinesFromNews(news: NewsItem[]): NewsItem[] {
+  const filtered = news.filter((item) =>
+    matchesAnyHeadlineTerm(item.title, TRANSACTION_TERMS),
+  );
+
+  return dedupeNewsItems(sortNewsByPublishedDateDesc(filtered)).map((item) => ({
     ...item,
     category: "transaction",
   }));
 }
 
-function fallbackRosterHighlights(team: TeamConfig, transactions: NewsItem[]): RosterHighlight[] {
-  const transaction = transactions[0];
-
-  return [
-    {
-      id: `${team.id}-roster-fallback`,
-      label: "Roster pulse",
-      value: transaction ? "Wire active" : "Public feed pending",
-      detail: transaction?.title ?? `${team.displayName} roster details will appear when the public feed is available.`,
-      source: "fallback",
-    },
-  ];
-}
-
-function extractLeaderHighlights(data: unknown): RosterHighlight[] {
+async function extractCoreTeamLeaders(data: unknown, team: TeamConfig): Promise<PlayerLeader[]> {
   if (!isRecord(data)) {
     return [];
   }
 
-  const categories = getArray(data.categories) ?? getArray(data.leaders);
+  const categories = getArray(data.categories);
   if (!categories) {
     return [];
   }
 
-  return categories.flatMap((category, index) => {
+  const leaders = categories.flatMap((category, index) => {
     if (!isRecord(category)) {
       return [];
     }
 
-    const leaders = getArray(category.leaders);
-    const leader = leaders?.find(isRecord);
-    const athlete = getRecord(leader?.athlete);
-    const athleteName =
-      asString(athlete?.displayName) ??
-      asString(athlete?.shortName) ??
-      asString(leader?.displayName);
-
-    if (!athleteName) {
+    const rawCategoryLabel = asString(category.displayName) ?? asString(category.name);
+    if (!rawCategoryLabel) {
       return [];
     }
 
+    const priority = getLeaderPriority(team.league, rawCategoryLabel);
+    if (!priority) {
+      return [];
+    }
+
+    const categoryLeaders = getArray(category.leaders);
+    const leader = categoryLeaders?.find(isRecord);
+    if (!leader) {
+      return [];
+    }
+
+    const athlete = getRecord(leader.athlete);
+    const athleteName = asString(athlete?.displayName) ?? asString(athlete?.shortName) ?? asString(leader.displayName);
+    const athleteRef = asString(athlete?.["$ref"]);
+    const leaderValue = asString(leader.displayValue) ?? numberToString(leader.value);
+
     return [{
       id: `leader-${index}-${athleteName}`,
-      label: asString(category.displayName) ?? asString(category.name) ?? "Team leader",
-      value: athleteName,
-      detail: asString(leader?.displayValue) ?? asString(leader?.value),
-      source: "leaders" as const,
+      label: priority.label,
+      playerName: athleteName,
+      athleteRef,
+      value: leaderValue ?? "Leader",
+      priorityIndex: priority.index,
+      sourceIndex: index,
     }];
   });
+
+  const seenPriorities = new Set<number>();
+
+  const selectedLeaders = leaders
+    .sort((a, b) => a.priorityIndex - b.priorityIndex || a.sourceIndex - b.sourceIndex)
+    .filter((leader) => {
+      if (seenPriorities.has(leader.priorityIndex)) {
+        return false;
+      }
+
+      seenPriorities.add(leader.priorityIndex);
+      return true;
+    })
+    .slice(0, getTeamLeaderLimit(team));
+
+  return Promise.all(selectedLeaders.map(async (leader) => ({
+      id: leader.id,
+      label: leader.label,
+      playerName: leader.playerName ?? await getCoreAthleteName(leader.athleteRef) ?? "Team leader",
+      value: leader.value,
+    })));
 }
 
-function extractRosterHighlights(data: unknown): RosterHighlight[] {
-  const athletes = extractAthletes(data);
-  if (!athletes.length) {
-    return [];
+async function getCoreAthleteName(athleteRef: string | undefined): Promise<string | undefined> {
+  if (!athleteRef) {
+    return undefined;
   }
 
-  const positionCounts = new Map<string, number>();
-  athletes.forEach((athlete) => {
-    const position =
-      asString(getRecord(athlete.position)?.abbreviation) ??
-      asString(getRecord(athlete.position)?.displayName) ??
-      "Roster";
-    positionCounts.set(position, (positionCounts.get(position) ?? 0) + 1);
-  });
-  const largestGroup = Array.from(positionCounts.entries())
-    .sort((a, b) => b[1] - a[1])[0];
-
-  const highlights: Array<RosterHighlight | undefined> = [
-    {
-      id: "roster-count",
-      label: "Roster count",
-      value: String(athletes.length),
-      detail: "Players listed in the public roster feed",
-      source: "roster",
-    },
-    largestGroup
-      ? {
-          id: "roster-largest-group",
-          label: "Largest group",
-          value: largestGroup[0],
-          detail: `${largestGroup[1]} players`,
-          source: "roster" as const,
-        }
-      : undefined,
-  ];
-
-  return highlights.filter((item): item is RosterHighlight => Boolean(item));
+  const athlete = getRecord(await fetchJson(athleteRef.replace(/^http:\/\//, "https://"), { next: { revalidate: 900 } }));
+  return asString(athlete?.displayName) ?? asString(athlete?.shortName) ?? asString(athlete?.fullName);
 }
 
-function extractAthletes(data: unknown): Array<Record<string, unknown>> {
-  if (!isRecord(data)) {
-    return [];
+function getLeaderSeasonCandidates(team: TeamConfig): string[] {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const candidates = team.sport === "football" && now.getMonth() < 7
+    ? [currentYear - 1, currentYear]
+    : [currentYear, currentYear - 1];
+
+  return [...new Set(candidates.map(String))];
+}
+
+function getTeamLeaderLimit(team: TeamConfig): number {
+  return LEADER_PRIORITIES[team.league].length;
+}
+
+function getLeaderPriority(league: TeamConfig["league"], categoryLabel: string): { index: number; label: string } | undefined {
+  const normalizedCategory = normalizeLeaderLabel(categoryLabel);
+  const priorities = LEADER_PRIORITIES[league];
+  const index = priorities.findIndex((priority) =>
+    priority.terms.some((term) => matchesLeaderTerm(normalizedCategory, term)),
+  );
+
+  return index >= 0 ? { index, label: priorities[index].label } : undefined;
+}
+
+function matchesLeaderTerm(normalizedCategory: string, term: string): boolean {
+  const normalizedTerm = normalizeLeaderLabel(term);
+  if (normalizedCategory === normalizedTerm) {
+    return true;
   }
 
-  const athletes = getArray(data.athletes);
-  if (athletes?.length) {
-    return athletes.filter(isRecord);
-  }
+  return normalizedTerm.includes(" ") && normalizedCategory.includes(normalizedTerm);
+}
 
-  const groups = getArray(data.groups);
-  if (!groups) {
-    return [];
-  }
-
-  return groups.flatMap((group) => getArray(getRecord(group)?.athletes)?.filter(isRecord) ?? []);
+function normalizeLeaderLabel(value: string): string {
+  return value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9%]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeStanding(standing: unknown): string | undefined {
@@ -589,26 +937,4 @@ function normalizeStanding(standing: unknown): string | undefined {
     .replace(/\s+in\s+/i, " ")
     .replace(/\s+Division$/i, "")
     .trim();
-}
-
-function fallbackNews(team: TeamConfig, category: NewsItem["category"]): NewsItem[] {
-  const query =
-    category === "transaction"
-      ? `${team.displayName} roster transactions`
-      : `${team.displayName} news`;
-
-  return [
-    {
-      id: `${team.id}-${category}-fallback`,
-      teamId: team.id,
-      title:
-        category === "transaction"
-          ? `${team.displayName} roster and injury headlines`
-          : `${team.displayName} latest team headlines`,
-      url: `https://www.espn.com/search/_/q/${encodeURIComponent(query)}`,
-      source: "ESPN Search",
-      publishedAt: new Date().toISOString(),
-      category,
-    },
-  ];
 }

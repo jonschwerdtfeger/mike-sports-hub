@@ -53,6 +53,15 @@ export type EspnArticle = {
   lastModified?: string;
   links?: { web?: { href?: string } };
   source?: string;
+  categories?: Array<{
+    type?: string;
+    teamId?: number | string;
+    description?: string;
+    team?: {
+      id?: number | string;
+      description?: string;
+    };
+  }>;
 };
 
 export function mapEspnEvent(team: TeamConfig, event: EspnEvent): GameSummary | null {

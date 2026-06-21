@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { GameStack } from "@/components/team-spotlight/game-stack";
-import { RosterPulse } from "@/components/team-spotlight/roster-pulse";
+import { PlayerPulse } from "@/components/team-spotlight/player-pulse";
 import { SignalList } from "@/components/team-spotlight/signal-list";
 import { PulseMetric, SpotlightSection } from "@/components/team-spotlight/spotlight-section";
 import { StandingsTabs } from "@/components/team-spotlight/standings-tabs";
@@ -98,12 +98,12 @@ export function TeamSpotlightPanel({
           </div>
         </SpotlightSection>
 
-        <SpotlightSection eyebrow="Players and wire" title="Roster Pulse">
-          <RosterPulse highlights={spotlight.rosterHighlights} />
+        <SpotlightSection eyebrow="Players and wire" title="Player Pulse">
+          <PlayerPulse pulse={spotlight.playerPulse} teamName={spotlight.team.shortName} />
         </SpotlightSection>
 
         <SpotlightSection eyebrow="News and transactions" title="Latest Signals">
-          <SignalList news={spotlight.news} transactions={spotlight.transactions} />
+          <SignalList news={spotlight.news} transactions={spotlight.transactions} teamName={spotlight.team.shortName} />
         </SpotlightSection>
       </div>
     </div>

@@ -80,12 +80,46 @@ export type TeamStandings = {
   defaultView: StandingsView;
 };
 
-export type RosterHighlight = {
+export type PlayerLeader = {
+  id: string;
+  label: string;
+  playerName: string;
+  value: string;
+  detail?: string;
+};
+
+export type PlayerTrend = {
   id: string;
   label: string;
   value: string;
   detail?: string;
-  source: "leaders" | "roster" | "fallback";
+};
+
+export type PlayerSignal = {
+  id: string;
+  label: string;
+  title: string;
+  source: string;
+  url?: string;
+  publishedAt?: string;
+};
+
+export type RosterSnapshot = {
+  totalPlayers: number;
+  activePlayers?: number;
+  injuredPlayers?: number;
+  largestPositionGroup?: {
+    name: string;
+    count: number;
+  };
+};
+
+export type PlayerPulse = {
+  teamLeaders: PlayerLeader[];
+  hotPlayers: PlayerTrend[];
+  availabilitySignals: PlayerSignal[];
+  personnelSignals: PlayerSignal[];
+  rosterSnapshot?: RosterSnapshot;
 };
 
 export type TeamSpotlight = {
@@ -95,7 +129,7 @@ export type TeamSpotlight = {
   lastGames: GameSummary[];
   nextGames: GameSummary[];
   standings: TeamStandings;
-  rosterHighlights: RosterHighlight[];
+  playerPulse: PlayerPulse;
   news: NewsItem[];
   transactions: NewsItem[];
 };

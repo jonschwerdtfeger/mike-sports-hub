@@ -70,11 +70,11 @@ export default async function Home() {
 
         <aside className="space-y-6">
           <DashboardSection title="Top Headlines" eyebrow="News feed">
-            <NewsList items={data.news} teams={teamById} />
+            <NewsList items={data.news} teams={teamById} emptyText="No relevant headlines found in public feed." />
           </DashboardSection>
 
           <DashboardSection title="Roster Wire" eyebrow="Transactions and injuries">
-            <NewsList items={data.transactions} teams={teamById} compact />
+            <NewsList items={data.transactions} teams={teamById} compact emptyText="No personnel updates found in public feed." />
           </DashboardSection>
         </aside>
       </div>
@@ -355,14 +355,16 @@ function NewsList({
   items,
   teams,
   compact = false,
+  emptyText = "No relevant items found in public feed.",
 }: {
   items: NewsItem[];
   teams: Map<string, TeamConfig>;
   compact?: boolean;
+  emptyText?: string;
 }) {
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--surface)]">
-      {items.map((item) => {
+      {items.length ? items.map((item) => {
         const team = teams.get(item.teamId);
         return (
           <a
@@ -388,7 +390,11 @@ function NewsList({
             ) : null}
           </a>
         );
-      })}
+      }) : (
+        <div className="p-4">
+          <p className="text-sm font-semibold text-[var(--text)]">{emptyText}</p>
+        </div>
+      )}
     </div>
   );
 }

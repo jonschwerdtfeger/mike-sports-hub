@@ -39,7 +39,7 @@ SportsHub is a personal sports command center that lets a fan feel completely ca
 1. Record / Standing / Status / Next Game
 2. Standings
 3. Last 5 / Next 5
-4. Roster Pulse
+4. Player Pulse
 5. Latest Signals
 
 ## Known Prototype Limitations
